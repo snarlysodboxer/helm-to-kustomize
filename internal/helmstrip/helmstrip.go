@@ -1,0 +1,85 @@
+// Package helmstrip removes common Helm-added labels and annotations from
+// Kubernetes resource yaml.Node trees.
+package helmstrip
+
+import (
+	"gopkg.in/yaml.v3"
+)
+
+// helmLabels are label keys unconditionally removed from metadata.labels.
+var helmLabels = map[string]bool{
+	"helm.sh/chart":                  true,
+	"app.kubernetes.io/managed-by":   true,
+	"app.kubernetes.io/version":      true,
+}
+
+// helmAnnotations are annotation keys unconditionally removed from metadata.annotations.
+var helmAnnotations = map[string]bool{
+	"helm.sh/resource-policy":          true,
+	"meta.helm.sh/release-name":        true,
+	"meta.helm.sh/release-namespace":   true,
+}
+
+// Strip removes Helm-specific labels and annotations from a document node in place.
+func Strip(doc *yaml.Node) {
+	if doc.Kind != yaml.DocumentNode || len(doc.Content) == 0 {
+		return
+	}
+	root := doc.Content[0]
+	if root.Kind != yaml.MappingNode {
+		return
+	}
+	metaNode := mappingValue(root, "metadata")
+	if metaNode == nil || metaNode.Kind != yaml.MappingNode {
+		return
+	}
+
+	stripMappingKeys(metaNode, "labels", helmLabels)
+	stripMappingKeys(metaNode, "annotations", helmAnnotations)
+}
+
+// stripMappingKeys removes specific keys from a named sub-map within parent.
+// If the sub-map becomes empty after removal, it is removed from parent entirely.
+func stripMappingKeys(parent *yaml.Node, subKey string, keysToRemove map[string]bool) {
+	subNode := mappingValue(parent, subKey)
+	if subNode == nil || subNode.Kind != yaml.MappingNode {
+		return
+	}
+
+	newContent := make([]*yaml.Node, 0, len(subNode.Content))
+	for i := 0; i+1 < len(subNode.Content); i += 2 {
+		k := subNode.Content[i]
+		v := subNode.Content[i+1]
+		if !keysToRemove[k.Value] {
+			newContent = append(newContent, k, v)
+		}
+	}
+
+	if len(newContent) == 0 {
+		// Remove the subKey from parent entirely.
+		removeMappingKey(parent, subKey)
+	} else {
+		subNode.Content = newContent
+	}
+}
+
+// mappingValue returns the value node for key in a MappingNode, or nil.
+func mappingValue(m *yaml.Node, key string) *yaml.Node {
+	for i := 0; i+1 < len(m.Content); i += 2 {
+		if m.Content[i].Value == key {
+			return m.Content[i+1]
+		}
+	}
+	return nil
+}
+
+// removeMappingKey removes a key/value pair from a MappingNode by key name.
+func removeMappingKey(m *yaml.Node, key string) {
+	newContent := make([]*yaml.Node, 0, len(m.Content))
+	for i := 0; i+1 < len(m.Content); i += 2 {
+		if m.Content[i].Value != key {
+			newContent = append(newContent, m.Content[i], m.Content[i+1])
+		}
+	}
+	m.Content = newContent
+}
