@@ -108,7 +108,7 @@ func extractKindName(doc *yaml.Node) (kind, name string, err error) {
 	if metaNode == nil {
 		return "", "", fmt.Errorf("missing 'metadata' field")
 	}
-	name = strings.ToLower(mappingValue(metaNode, "name"))
+	name = strings.ReplaceAll(strings.ToLower(mappingValue(metaNode, "name")), ":", "_")
 	if name == "" {
 		return "", "", fmt.Errorf("missing 'metadata.name' field")
 	}
