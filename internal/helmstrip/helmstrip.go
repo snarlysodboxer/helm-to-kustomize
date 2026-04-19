@@ -44,6 +44,8 @@ func Strip(doc *yaml.Node) {
 	stripNullCreationTimestamp(metaNode)
 
 	stripSourceComments(doc, root)
+
+	UnquoteScalars(doc)
 }
 
 // stripSourceComments removes "# Source: ..." head comments that Helm adds
