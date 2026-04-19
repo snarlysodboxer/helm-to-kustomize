@@ -18,6 +18,9 @@ var helmLabels = map[string]bool{
 // helmAnnotations are annotation keys unconditionally removed from metadata.annotations.
 var helmAnnotations = map[string]bool{
 	"helm.sh/resource-policy":          true,
+	"helm.sh/hook":                     true,
+	"helm.sh/hook-weight":              true,
+	"helm.sh/hook-delete-policy":       true,
 	"meta.helm.sh/release-name":        true,
 	"meta.helm.sh/release-namespace":   true,
 }
