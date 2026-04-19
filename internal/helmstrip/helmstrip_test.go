@@ -160,6 +160,38 @@ metadata:
 	}
 }
 
+func TestStripCreationTimestamp_Null(t *testing.T) {
+	input := `apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: test
+  creationTimestamp: null
+`
+	doc := decode(t, input)
+	Strip(doc)
+	out := encode(t, doc)
+
+	if strings.Contains(out, "creationTimestamp") {
+		t.Errorf("creationTimestamp: null should have been removed:\n%s", out)
+	}
+}
+
+func TestStripCreationTimestamp_WithValue(t *testing.T) {
+	input := `apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: test
+  creationTimestamp: "2024-01-01T00:00:00Z"
+`
+	doc := decode(t, input)
+	Strip(doc)
+	out := encode(t, doc)
+
+	if strings.Contains(out, "creationTimestamp") {
+		t.Errorf("creationTimestamp should have been removed regardless of value:\n%s", out)
+	}
+}
+
 func TestStripNoMetadata(t *testing.T) {
 	input := `apiVersion: v1
 kind: Namespace

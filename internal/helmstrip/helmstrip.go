@@ -41,6 +41,7 @@ func Strip(doc *yaml.Node) {
 
 	stripMappingKeys(metaNode, "labels", helmLabels)
 	stripMappingKeys(metaNode, "annotations", helmAnnotations)
+	stripNullCreationTimestamp(metaNode)
 
 	stripSourceComments(doc, root)
 }
@@ -73,6 +74,12 @@ func filterSourceComment(comment string) string {
 		kept = append(kept, line)
 	}
 	return strings.TrimSpace(strings.Join(kept, "\n"))
+}
+
+// stripCreationTimestamp removes creationTimestamp from metadata unconditionally.
+// It's a server-set field that doesn't belong in static manifests.
+func stripNullCreationTimestamp(metaNode *yaml.Node) {
+	removeMappingKey(metaNode, "creationTimestamp")
 }
 
 // stripMappingKeys removes specific keys from a named sub-map within parent.
