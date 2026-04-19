@@ -3,6 +3,8 @@
 package helmstrip
 
 import (
+	"strings"
+
 	"gopkg.in/yaml.v3"
 )
 
@@ -36,6 +38,38 @@ func Strip(doc *yaml.Node) {
 
 	stripMappingKeys(metaNode, "labels", helmLabels)
 	stripMappingKeys(metaNode, "annotations", helmAnnotations)
+
+	stripSourceComments(doc, root)
+}
+
+// stripSourceComments removes "# Source: ..." head comments that Helm adds
+// to each template output document. yaml.v3 may place these on the document
+// node, the root mapping node, or the first key node.
+func stripSourceComments(doc, root *yaml.Node) {
+	doc.HeadComment = filterSourceComment(doc.HeadComment)
+	root.HeadComment = filterSourceComment(root.HeadComment)
+	if len(root.Content) > 0 {
+		root.Content[0].HeadComment = filterSourceComment(root.Content[0].HeadComment)
+	}
+}
+
+// filterSourceComment removes lines containing "Source:" from a comment string.
+// yaml.v3 stores comments with the "# " prefix intact.
+func filterSourceComment(comment string) string {
+	if comment == "" {
+		return ""
+	}
+	var kept []string
+	for _, line := range strings.Split(comment, "\n") {
+		trimmed := strings.TrimSpace(line)
+		// Match "# Source: ...", "Source: ...", with optional leading "#"
+		stripped := strings.TrimLeft(trimmed, "# ")
+		if strings.HasPrefix(stripped, "Source:") {
+			continue
+		}
+		kept = append(kept, line)
+	}
+	return strings.TrimSpace(strings.Join(kept, "\n"))
 }
 
 // stripMappingKeys removes specific keys from a named sub-map within parent.
