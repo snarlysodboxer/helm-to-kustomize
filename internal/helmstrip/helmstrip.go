@@ -25,7 +25,8 @@ var helmAnnotations = map[string]bool{
 	"meta.helm.sh/release-namespace":   true,
 }
 
-// Strip removes Helm-specific labels and annotations from a document node in place.
+// Strip removes Helm-specific labels, annotations, and other artifacts from a
+// document node in place.
 func Strip(doc *yaml.Node) {
 	if doc.Kind != yaml.DocumentNode || len(doc.Content) == 0 {
 		return
@@ -34,18 +35,40 @@ func Strip(doc *yaml.Node) {
 	if root.Kind != yaml.MappingNode {
 		return
 	}
-	metaNode := mappingValue(root, "metadata")
+
+	// Top-level metadata.
+	stripMetadata(root)
+
+	// Pod template metadata: spec.template.metadata
+	// Applies to Deployment, StatefulSet, DaemonSet, Job, ReplicaSet.
+	if spec := mappingValue(root, "spec"); spec != nil {
+		if tmpl := mappingValue(spec, "template"); tmpl != nil {
+			stripMetadata(tmpl)
+		}
+		// CronJob: spec.jobTemplate.spec.template.metadata
+		if jobTmpl := mappingValue(spec, "jobTemplate"); jobTmpl != nil {
+			if jobSpec := mappingValue(jobTmpl, "spec"); jobSpec != nil {
+				if tmpl := mappingValue(jobSpec, "template"); tmpl != nil {
+					stripMetadata(tmpl)
+				}
+			}
+		}
+	}
+
+	stripSourceComments(doc, root)
+	UnquoteScalars(doc)
+}
+
+// stripMetadata removes Helm labels, annotations, and creationTimestamp from
+// a node that contains a "metadata" key (e.g. a resource root or a pod template).
+func stripMetadata(parent *yaml.Node) {
+	metaNode := mappingValue(parent, "metadata")
 	if metaNode == nil || metaNode.Kind != yaml.MappingNode {
 		return
 	}
-
 	stripMappingKeys(metaNode, "labels", helmLabels)
 	stripMappingKeys(metaNode, "annotations", helmAnnotations)
-	stripNullCreationTimestamp(metaNode)
-
-	stripSourceComments(doc, root)
-
-	UnquoteScalars(doc)
+	removeMappingKey(metaNode, "creationTimestamp")
 }
 
 // stripSourceComments removes "# Source: ..." head comments that Helm adds
@@ -76,12 +99,6 @@ func filterSourceComment(comment string) string {
 		kept = append(kept, line)
 	}
 	return strings.TrimSpace(strings.Join(kept, "\n"))
-}
-
-// stripCreationTimestamp removes creationTimestamp from metadata unconditionally.
-// It's a server-set field that doesn't belong in static manifests.
-func stripNullCreationTimestamp(metaNode *yaml.Node) {
-	removeMappingKey(metaNode, "creationTimestamp")
 }
 
 // stripMappingKeys removes specific keys from a named sub-map within parent.

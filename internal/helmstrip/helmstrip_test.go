@@ -192,6 +192,215 @@ metadata:
 	}
 }
 
+func TestStripDeploymentPodTemplateLabels(t *testing.T) {
+	input := `apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: myapp
+  labels:
+    app: myapp
+    helm.sh/chart: myapp-1.0.0
+spec:
+  template:
+    metadata:
+      labels:
+        app: myapp
+        helm.sh/chart: myapp-1.0.0
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/version: "1.0.0"
+      annotations:
+        helm.sh/hook: pre-install
+    spec:
+      containers:
+      - name: myapp
+        image: myapp:latest
+`
+	doc := decode(t, input)
+	Strip(doc)
+	out := encode(t, doc)
+
+	// Check pod template labels are stripped
+	// Split at "spec:" to isolate the template section
+	parts := strings.SplitN(out, "spec:", 2)
+	if len(parts) < 2 {
+		t.Fatalf("expected spec: in output:\n%s", out)
+	}
+	templateSection := parts[1]
+
+	for _, label := range []string{"helm.sh/chart", "app.kubernetes.io/managed-by", "app.kubernetes.io/version"} {
+		if strings.Contains(templateSection, label) {
+			t.Errorf("pod template label %q should have been removed:\n%s", label, out)
+		}
+	}
+	if !strings.Contains(templateSection, "app: myapp") {
+		t.Errorf("pod template label 'app: myapp' should have been kept:\n%s", out)
+	}
+	if strings.Contains(templateSection, "helm.sh/hook") {
+		t.Errorf("pod template annotation 'helm.sh/hook' should have been removed:\n%s", out)
+	}
+}
+
+func TestStripStatefulSetPodTemplateLabels(t *testing.T) {
+	input := `apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: mydb
+  labels:
+    app: mydb
+    helm.sh/chart: mydb-1.0.0
+spec:
+  template:
+    metadata:
+      labels:
+        app: mydb
+        helm.sh/chart: mydb-1.0.0
+        app.kubernetes.io/managed-by: Helm
+    spec:
+      containers:
+      - name: mydb
+        image: mydb:latest
+`
+	doc := decode(t, input)
+	Strip(doc)
+	out := encode(t, doc)
+
+	parts := strings.SplitN(out, "spec:", 2)
+	if len(parts) < 2 {
+		t.Fatalf("expected spec: in output:\n%s", out)
+	}
+	templateSection := parts[1]
+
+	for _, label := range []string{"helm.sh/chart", "app.kubernetes.io/managed-by"} {
+		if strings.Contains(templateSection, label) {
+			t.Errorf("pod template label %q should have been removed:\n%s", label, out)
+		}
+	}
+	if !strings.Contains(templateSection, "app: mydb") {
+		t.Errorf("pod template label 'app: mydb' should have been kept:\n%s", out)
+	}
+}
+
+func TestStripDaemonSetPodTemplateLabels(t *testing.T) {
+	input := `apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: agent
+spec:
+  template:
+    metadata:
+      labels:
+        app: agent
+        helm.sh/chart: agent-1.0.0
+    spec:
+      containers:
+      - name: agent
+        image: agent:latest
+`
+	doc := decode(t, input)
+	Strip(doc)
+	out := encode(t, doc)
+
+	parts := strings.SplitN(out, "spec:", 2)
+	if len(parts) < 2 {
+		t.Fatalf("expected spec: in output:\n%s", out)
+	}
+	if strings.Contains(parts[1], "helm.sh/chart") {
+		t.Errorf("pod template label 'helm.sh/chart' should have been removed:\n%s", out)
+	}
+}
+
+func TestStripJobPodTemplateLabels(t *testing.T) {
+	input := `apiVersion: batch/v1
+kind: Job
+metadata:
+  name: migrate
+spec:
+  template:
+    metadata:
+      labels:
+        app: migrate
+        helm.sh/chart: migrate-1.0.0
+    spec:
+      containers:
+      - name: migrate
+        image: migrate:latest
+`
+	doc := decode(t, input)
+	Strip(doc)
+	out := encode(t, doc)
+
+	parts := strings.SplitN(out, "spec:", 2)
+	if len(parts) < 2 {
+		t.Fatalf("expected spec: in output:\n%s", out)
+	}
+	if strings.Contains(parts[1], "helm.sh/chart") {
+		t.Errorf("pod template label 'helm.sh/chart' should have been removed:\n%s", out)
+	}
+}
+
+func TestStripCronJobPodTemplateLabels(t *testing.T) {
+	input := `apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: backup
+spec:
+  jobTemplate:
+    spec:
+      template:
+        metadata:
+          labels:
+            app: backup
+            helm.sh/chart: backup-1.0.0
+            app.kubernetes.io/managed-by: Helm
+        spec:
+          containers:
+          - name: backup
+            image: backup:latest
+`
+	doc := decode(t, input)
+	Strip(doc)
+	out := encode(t, doc)
+
+	if strings.Contains(out, "helm.sh/chart") {
+		t.Errorf("CronJob pod template label 'helm.sh/chart' should have been removed:\n%s", out)
+	}
+	if strings.Contains(out, "app.kubernetes.io/managed-by") {
+		t.Errorf("CronJob pod template label 'managed-by' should have been removed:\n%s", out)
+	}
+	if !strings.Contains(out, "app: backup") {
+		t.Errorf("CronJob pod template label 'app: backup' should have been kept:\n%s", out)
+	}
+}
+
+func TestStripPodTemplateCreationTimestamp(t *testing.T) {
+	input := `apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: myapp
+spec:
+  template:
+    metadata:
+      creationTimestamp: null
+      labels:
+        app: myapp
+    spec:
+      containers:
+      - name: myapp
+        image: myapp:latest
+`
+	doc := decode(t, input)
+	Strip(doc)
+	out := encode(t, doc)
+
+	parts := strings.SplitN(out, "spec:", 2)
+	if len(parts) < 2 {
+		t.Fatalf("expected spec: in output:\n%s", out)
+	}
+	if strings.Contains(parts[1], "creationTimestamp") {
+		t.Errorf("pod template creationTimestamp should have been removed:\n%s", out)
+	}
+}
+
 func TestStripNoMetadata(t *testing.T) {
 	input := `apiVersion: v1
 kind: Namespace
