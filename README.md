@@ -30,7 +30,14 @@ helm template <release> <chart> [flags] > chart.yaml
 helm-to-kustomize --input-file chart.yaml --output-dir ./k8s/base
 ```
 
-Both flags are required.
+`--input-file` and `--output-dir` are required.
+
+### kustomization.yaml handling
+
+By default an existing `kustomization.yaml` in the output directory is overwritten. Two mutually exclusive flags change this:
+
+- `--skip-kustomization` - don't create or update `kustomization.yaml` at all
+- `--merge-kustomization` - add the generated files to an existing `kustomization.yaml`'s `resources` list instead of overwriting it. May require re-running yamlfmt.
 
 ## YAML formatting
 

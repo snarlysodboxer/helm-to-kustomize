@@ -16,9 +16,18 @@ import (
 	"github.com/snarlysodboxer/helm-to-kustomize/internal/helmstrip"
 )
 
+// Options controls how the kustomization.yaml is handled.
+type Options struct {
+	// SkipKustomization leaves any kustomization.yaml untouched.
+	SkipKustomization bool
+	// MergeKustomization appends resources to an existing kustomization.yaml
+	// instead of overwriting it, preserving other fields and comments.
+	MergeKustomization bool
+}
+
 // Run reads inputFile, splits it into individual resource files under outputDir,
 // removes Helm labels/annotations, and writes a kustomization.yaml.
-func Run(inputFile, outputDir string) error {
+func Run(inputFile, outputDir string, opts Options) error {
 	f, err := os.Open(inputFile)
 	if err != nil {
 		return fmt.Errorf("open input: %w", err)
@@ -79,13 +88,26 @@ func Run(inputFile, outputDir string) error {
 		return fmt.Errorf("no resources found in %s", inputFile)
 	}
 
+	if opts.SkipKustomization {
+		return nil
+	}
+
 	sort.Strings(resources)
+
+	if opts.MergeKustomization {
+		if err := mergeKustomization(outputDir, resources); err != nil {
+			return fmt.Errorf("merge kustomization.yaml: %w", err)
+		}
+		fmt.Printf("updated %s\n", filepath.Join(outputDir, "kustomization.yaml"))
+
+		return nil
+	}
 
 	if err := writeKustomization(outputDir, resources); err != nil {
 		return fmt.Errorf("write kustomization.yaml: %w", err)
 	}
-
 	fmt.Printf("wrote %s\n", filepath.Join(outputDir, "kustomization.yaml"))
+
 	return nil
 }
 
@@ -179,7 +201,69 @@ func writeKustomization(outputDir string, resources []string) error {
 		return err
 	}
 
-	return os.WriteFile(filepath.Join(outputDir, "kustomization.yaml"), data, 0o644)
+	return os.WriteFile(filepath.Join(outputDir, "kustomization.yaml"), blankLineBeforeResources(data), 0o644)
+}
+
+// mergeKustomization appends resources to an existing kustomization.yaml,
+// preserving its other fields and comments. Resources already listed are not
+// duplicated. If the file doesn't exist, it is created.
+func mergeKustomization(outputDir string, resources []string) error {
+	path := filepath.Join(outputDir, "kustomization.yaml")
+	data, err := os.ReadFile(path)
+	if os.IsNotExist(err) {
+		return writeKustomization(outputDir, resources)
+	}
+	if err != nil {
+		return err
+	}
+
+	var doc yaml.Node
+	if err := yaml.Unmarshal(data, &doc); err != nil {
+		return fmt.Errorf("parse existing file: %w", err)
+	}
+	if doc.Kind != yaml.DocumentNode || len(doc.Content) == 0 || doc.Content[0].Kind != yaml.MappingNode {
+		return fmt.Errorf("existing file is not a YAML mapping")
+	}
+	root := doc.Content[0]
+
+	seq := mappingNode(root, "resources")
+	switch {
+	case seq == nil:
+		seq = &yaml.Node{Kind: yaml.SequenceNode, Tag: "!!seq"}
+		root.Content = append(root.Content, scalar("resources"), seq)
+	case seq.Kind == yaml.ScalarNode && seq.Tag == "!!null":
+		// An empty `resources:` key decodes as a null scalar; turn it into a sequence.
+		seq.Kind = yaml.SequenceNode
+		seq.Tag = "!!seq"
+		seq.Value = ""
+	case seq.Kind != yaml.SequenceNode:
+		return fmt.Errorf("existing 'resources' field is not a list")
+	}
+
+	existing := make(map[string]bool, len(seq.Content))
+	for _, node := range seq.Content {
+		existing[node.Value] = true
+	}
+	for _, resource := range resources {
+		if !existing[resource] {
+			seq.Content = append(seq.Content, scalar(resource))
+		}
+	}
+
+	out, err := marshalDoc(&doc)
+	if err != nil {
+		return err
+	}
+
+	return os.WriteFile(path, out, 0o644)
+}
+
+// blankLineBeforeResources inserts a blank line before the top-level
+// `resources:` key. The yaml.v3 encoder has no way to emit blank lines (its
+// node model only carries comments), so this is done on the marshaled bytes,
+// for style.
+func blankLineBeforeResources(data []byte) []byte {
+	return bytes.Replace(data, []byte("\nresources:"), []byte("\n\nresources:"), 1)
 }
 
 // mappingValue returns the scalar value for key in a MappingNode, or "".
