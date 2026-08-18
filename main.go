@@ -28,7 +28,7 @@ skipped with --skip-kustomization, or merged into an existing file with
 		},
 	}
 
-	rootCmd.Flags().StringVar(&inputFile, "input-file", "", "Input YAML file (output of 'helm template')")
+	rootCmd.Flags().StringVar(&inputFile, "input-file", "", "Input YAML file (output of 'helm template'), or '-' to read from stdin")
 	rootCmd.Flags().StringVar(&outputDir, "output-dir", "", "Output directory for kustomize files")
 	rootCmd.Flags().BoolVar(&opts.SkipKustomization, "skip-kustomization", false, "Do not create or update kustomization.yaml")
 	rootCmd.Flags().BoolVar(&opts.MergeKustomization, "merge-kustomization", false, "Add resources to an existing kustomization.yaml instead of overwriting it (creates it if missing)")

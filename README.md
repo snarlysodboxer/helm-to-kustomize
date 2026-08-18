@@ -30,7 +30,11 @@ helm template <release> <chart> [flags] > chart.yaml
 helm-to-kustomize --input-file chart.yaml --output-dir ./k8s/base
 ```
 
-`--input-file` and `--output-dir` are required.
+`--input-file` and `--output-dir` are required. Pass `-` as the input file to read from stdin:
+
+```sh
+helm template <release> <chart> [flags] | helm-to-kustomize --input-file - --output-dir ./k8s/base
+```
 
 ### kustomization.yaml handling
 

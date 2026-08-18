@@ -25,20 +25,28 @@ type Options struct {
 	MergeKustomization bool
 }
 
-// Run reads inputFile, splits it into individual resource files under outputDir,
-// removes Helm labels/annotations, and writes a kustomization.yaml.
+// Run reads inputFile ("-" for stdin), splits it into individual resource
+// files under outputDir, removes Helm labels/annotations, and writes a
+// kustomization.yaml.
 func Run(inputFile, outputDir string, opts Options) error {
-	f, err := os.Open(inputFile)
-	if err != nil {
-		return fmt.Errorf("open input: %w", err)
+	var input io.Reader
+	if inputFile == "-" {
+		input = os.Stdin
+		inputFile = "stdin"
+	} else {
+		f, err := os.Open(inputFile)
+		if err != nil {
+			return fmt.Errorf("open input: %w", err)
+		}
+		defer f.Close()
+		input = f
 	}
-	defer f.Close()
 
 	if err := os.MkdirAll(outputDir, 0o755); err != nil {
 		return fmt.Errorf("create output dir: %w", err)
 	}
 
-	dec := yaml.NewDecoder(f)
+	dec := yaml.NewDecoder(input)
 
 	// nameCounts tracks how many times we've seen each kind.name combo to
 	// handle collisions by appending a numeric suffix.
